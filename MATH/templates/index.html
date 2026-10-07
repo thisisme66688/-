@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高中數學解題導航器</title>
+    <style>
+        body { font-family: "Microsoft JhengHei", sans-serif; background-color: #f4f7f6; padding: 20px; }
+        .container { max-width: 700px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        h2 { color: #333; text-align: center; }
+        textarea { width: 95%; height: 120px; padding: 15px; font-size: 16px; border: 2px solid #ddd; border-radius: 8px; margin-bottom: 15px; resize: vertical; }
+        button { width: 100%; padding: 12px 20px; background-color: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 18px; font-weight: bold; transition: 0.3s; }
+        button:hover { background-color: #0056b3; }
+        
+        /* 螢光筆與題目顯示框的特效 */
+        .question-display { font-size: 18px; line-height: 1.8; background: #f9f9f9; padding: 20px; border: 2px dashed #bbb; border-radius: 8px; margin-bottom: 20px; word-break: break-all; }
+        .highlight { background-color: #ffeb3b; padding: 2px 6px; border-radius: 4px; font-weight: bold; color: #d32f2f; box-shadow: 1px 1px 3px rgba(0,0,0,0.1); }
+        
+        /* 命中結果卡片 */
+        .result-card { background-color: #e9ecef; margin-top: 10px; padding: 15px; border-radius: 8px; border-left: 6px solid #28a745; font-size: 16px; }
+        .concept-text { color: #d9534f; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>🧭 高中數學智慧導航器</h2>
+        <p style="text-align: center; color: #666;">支援複製多題貼上，或直接上傳 PDF 考卷！</p>
+        
+        <!-- 新增：PDF 上傳區塊 -->
+        <div style="background: #f1f8ff; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #cce5ff;">
+            <strong>📄 方式一：上傳 PDF 題庫</strong><br><br>
+            <input type="file" id="pdfUpload" accept="application/pdf">
+        </div>
+
+        <div style="text-align: center; margin-bottom: 10px; font-weight: bold; color: #888;">OR</div>
+
+        <!-- 原本的輸入區塊 -->
+        <div style="background: #fff8f1; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #ffeeba;">
+            <strong>✍️ 方式二：直接貼上多題文字</strong><br><br>
+            <textarea id="questionInput" placeholder="請在此貼上題目... (支援一次貼上多題)"></textarea>
+        </div>
+
+        <button onclick="analyzeQuestion()">開始分析考題</button>
+        
+        <div id="resultContainer" style="margin-top: 25px;"></div>
+    </div>
+
+    <script>
+        async function analyzeQuestion() {
+            const questionInput = document.getElementById('questionInput').value;
+            const pdfFile = document.getElementById('pdfUpload').files[0];
+            const resultContainer = document.getElementById('resultContainer');
+            
+            if(!questionInput.trim() && !pdfFile) {
+                alert("請貼上題目，或是選擇一份 PDF 檔案！");
+                return;
+            }
+
+            resultContainer.innerHTML = "<p style='text-align:center;'>🤖 正在讀取並分析中，請稍候...</p>";
+
+            // 因為要傳送檔案，改用 FormData 包裝資料
+            const formData = new FormData();
+            if (pdfFile) {
+                formData.append('file', pdfFile);
+            }
+            if (questionInput) {
+                formData.append('question', questionInput);
+            }
+
+            try {
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+
+                if (data.error) {
+                    resultContainer.innerHTML = `<p style='color:red;'>錯誤：${data.error}</p>`;
+                    return;
+                }
+                
+                // 這次的 data.results 是一個陣列，每個元素代表「一題」
+                let htmlOutput = `<h3>🔍 考卷逐題解析結果：</h3>`;
+                
+                data.results.forEach((q_data, index) => {
+                    // 1. 處理這一題的題目文字 (加上螢光筆)
+                    let highlightedText = q_data.question_text;
+                    q_data.knowledge_points.forEach(item => {
+                        const safeKeyword = item.keyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                        const regex = new RegExp(safeKeyword, 'gi');
+                        highlightedText = highlightedText.replace(regex, `<span class="highlight">$&</span>`);
+                    });
+                    
+                    highlightedText = highlightedText.replace(/\n/g, '<br>');
+
+                    // 2. 建立這一題的區塊
+                    htmlOutput += `
+                    <div style="background: #fff; padding: 20px; border-radius: 8px; margin-bottom: 25px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border: 1px solid #eee;">
+                        <h4 style="color: #007bff; margin-top: 0; border-bottom: 2px solid #e9ecef; padding-bottom: 10px;">
+                            📝 題目 ${q_data.question_number}
+                        </h4>
+                        
+                        <div class="question-display" style="font-size: 16px;">
+                            ${highlightedText}
+                        </div>
+                    `;
+                    
+                    // 3. 列出這一題的知識點
+                    if (q_data.knowledge_points.length > 0) {
+                        htmlOutput += `<div style="margin-top: 15px;"><strong>🎯 本題知識點：</strong>`;
+                        q_data.knowledge_points.forEach(item => {
+                            htmlOutput += `
+                                <div class="result-card" style="padding: 10px; margin-top: 8px;">
+                                    <strong>${item.keyword}</strong> ➡️ <span class="concept-text">${item.concept}</span> 
+                                    <span style="color: #666; font-size: 0.9em;">(${item.chapter})</span>
+                                </div>
+                            `;
+                        });
+                        htmlOutput += `</div>`;
+                    } else {
+                        htmlOutput += `<div style="margin-top: 15px; color: #888;"><em>⚠️ 找不到對應的知識點</em></div>`;
+                    }
+                    
+                    htmlOutput += `</div>`; // 結束這一題的區塊
+                });
+                
+                resultContainer.innerHTML = htmlOutput;
+
+            } catch (error) {
+                resultContainer.innerHTML = "<p style='color: red; text-align:center;'>系統錯誤，請確認 Python 伺服器有正常運行。</p>";
+                console.error('Error:', error);
+            }
+        }
+    </script>
+</body>
+</html>
